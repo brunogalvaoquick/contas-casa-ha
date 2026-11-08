@@ -9,7 +9,7 @@
 #   sensor.contas_casa_a_pagar_mes R$ que falta pagar no mês
 #   sensor.contas_casa_entradas_mes / sensor.contas_casa_sobra_mes
 #   sensor.fundo_reserva, sensor.fundo_seguro ... (um por fundo)
-# Painel no app: /hassio/ingress/local_contas_casa
+# Painel no app: /hassio/ingress/2a19f6ed_contas_casa
 # ===================================================================
 automation:
   - id: contas_casa_aviso_manha
@@ -47,7 +47,7 @@ automation:
           title: "🧾 Contas da casa"
           message: "{{ texto }}"
           data:
-            clickAction: /hassio/ingress/local_contas_casa
+            clickAction: /hassio/ingress/2a19f6ed_contas_casa
             tag: contas_casa
       - action: notify.mobile_app_moto_g56_5g
         continue_on_error: true
@@ -55,7 +55,7 @@ automation:
           title: "🧾 Contas da casa"
           message: "{{ texto }}"
           data:
-            clickAction: /hassio/ingress/local_contas_casa
+            clickAction: /hassio/ingress/2a19f6ed_contas_casa
             tag: contas_casa
     mode: single
 
@@ -86,7 +86,7 @@ automation:
           title: "⏰ Conta vence hoje"
           message: "{{ msg }}"
           data:
-            clickAction: /hassio/ingress/local_contas_casa
+            clickAction: /hassio/ingress/2a19f6ed_contas_casa
             tag: contas_casa
       - action: notify.mobile_app_moto_g56_5g
         continue_on_error: true
@@ -94,6 +94,6 @@ automation:
           title: "⏰ Conta vence hoje"
           message: "{{ msg }}"
           data:
-            clickAction: /hassio/ingress/local_contas_casa
+            clickAction: /hassio/ingress/2a19f6ed_contas_casa
             tag: contas_casa
     mode: single
