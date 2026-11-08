@@ -1,0 +1,20 @@
+name: Contas da Casa
+version: "1.0.0"
+slug: contas_casa
+description: Contas a pagar com comprovante, entradas e fundos da casa — para o casal ver junto
+url: https://github.com/brunogalvaoquick/contas-casa-ha
+arch:
+  - aarch64
+  - armv7
+  - amd64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:cash-multiple
+panel_title: Contas
+homeassistant_api: true
+backup: hot
+options: {}
+schema: {}

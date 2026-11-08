@@ -1,0 +1,99 @@
+# ===================================================================
+# Contas da Casa — avisos (07/11/2026)
+# Os sensores sensor.contas_casa_* e sensor.fundo_* vêm do add-on
+# "Contas da Casa" (apps/local/contas_casa). Ele republica a cada 5 min
+# e na hora em que alguém lança/paga uma conta.
+#   sensor.contas_casa_hoje        nº de contas vencendo hoje; atributo "texto" = frase pronta
+#   sensor.contas_casa_vencidas    nº de contas vencidas não pagas
+#   sensor.contas_casa_amanha      nº de contas vencendo amanhã
+#   sensor.contas_casa_a_pagar_mes R$ que falta pagar no mês
+#   sensor.contas_casa_entradas_mes / sensor.contas_casa_sobra_mes
+#   sensor.fundo_reserva, sensor.fundo_seguro ... (um por fundo)
+# Painel no app: /hassio/ingress/local_contas_casa
+# ===================================================================
+automation:
+  - id: contas_casa_aviso_manha
+    alias: Contas - aviso da manhã (vence hoje, vencidas e amanhã)
+    description: >-
+      Às 6h11, logo depois da previsão do tempo, fala pela caixa da cozinha as
+      contas que vencem hoje, as vencidas e as de amanhã, e manda no celular do
+      Bruno e da Valentina. Se não tiver nada, fica quieto.
+    triggers:
+      - trigger: time
+        at: "06:11:00"
+    conditions:
+      - condition: template
+        value_template: >
+          {{ states('sensor.contas_casa_hoje') | int(0) > 0
+             or states('sensor.contas_casa_vencidas') | int(0) > 0
+             or states('sensor.contas_casa_amanha') | int(0) > 0 }}
+    actions:
+      - variables:
+          texto: "{{ state_attr('sensor.contas_casa_hoje', 'texto') }}"
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.lva_08cc2d3f6831_media_player
+        data:
+          volume_level: 1
+      - action: tts.speak
+        target:
+          entity_id: tts.google_ai_tts
+        data:
+          media_player_entity_id: media_player.lva_08cc2d3f6831_media_player
+          message: "Contas da casa. {{ texto }}"
+      - action: notify.mobile_app_motorola_edge_70_fusion
+        continue_on_error: true
+        data:
+          title: "🧾 Contas da casa"
+          message: "{{ texto }}"
+          data:
+            clickAction: /hassio/ingress/local_contas_casa
+            tag: contas_casa
+      - action: notify.mobile_app_moto_g56_5g
+        continue_on_error: true
+        data:
+          title: "🧾 Contas da casa"
+          message: "{{ texto }}"
+          data:
+            clickAction: /hassio/ingress/local_contas_casa
+            tag: contas_casa
+    mode: single
+
+  - id: contas_casa_lembrete_tarde
+    alias: Contas - lembrete às 18h (ainda não pagou a de hoje)
+    description: >-
+      Às 18h, se ainda tiver conta vencendo hoje sem marcar como paga, manda
+      lembrete no celular dos dois (sem voz).
+    triggers:
+      - trigger: time
+        at: "18:00:00"
+    conditions:
+      - condition: numeric_state
+        entity_id: sensor.contas_casa_hoje
+        above: 0
+    actions:
+      - variables:
+          lista: >
+            {% set l = state_attr('sensor.contas_casa_hoje', 'contas') or [] %}
+            {{ l | map(attribute='descricao') | join(', ') }}
+          msg: >-
+            Ainda falta pagar hoje: {{ lista }}
+            (R$ {{ '%.2f' | format(state_attr('sensor.contas_casa_hoje', 'total') | float(0)) | replace('.', ',') }}).
+            Depois de pagar, marque no app.
+      - action: notify.mobile_app_motorola_edge_70_fusion
+        continue_on_error: true
+        data:
+          title: "⏰ Conta vence hoje"
+          message: "{{ msg }}"
+          data:
+            clickAction: /hassio/ingress/local_contas_casa
+            tag: contas_casa
+      - action: notify.mobile_app_moto_g56_5g
+        continue_on_error: true
+        data:
+          title: "⏰ Conta vence hoje"
+          message: "{{ msg }}"
+          data:
+            clickAction: /hassio/ingress/local_contas_casa
+            tag: contas_casa
+    mode: single

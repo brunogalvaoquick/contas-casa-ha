@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Contas da Casa</title>
+<style>
+:root{
+  --bg:#f4f5f7;--card:#fff;--txt:#1d2330;--sub:#6b7280;--line:#e5e7eb;
+  --pri:#03a9f4;--ok:#2e7d32;--warn:#ef6c00;--bad:#c62828;--chip:#eef2f7;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#111418;--card:#1b1f26;--txt:#e8eaed;--sub:#9aa3af;--line:#2a2f38;--chip:#252b34}
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--txt);
+  font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+button{font:inherit;cursor:pointer}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 14px 6px}
+.mes{display:flex;align-items:center;justify-content:space-between}
+.mes h1{font-size:18px;margin:0}
+.mes button{background:none;border:0;color:var(--txt);font-size:22px;padding:4px 12px}
+.quem{color:var(--sub);font-size:12px;text-align:center}
+main{padding:0 12px 120px;max-width:720px;margin:0 auto}
+.resumo{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+.box{background:var(--card);border-radius:12px;padding:10px 12px;border:1px solid var(--line)}
+.box small{color:var(--sub);display:block;font-size:12px}
+.box b{font-size:18px}
+.alerta{background:#fdecea;color:var(--bad);border:1px solid #f5c2c0;border-radius:12px;
+  padding:10px 12px;margin:8px 0;font-weight:600}
+@media (prefers-color-scheme:dark){.alerta{background:#3a1d1d;border-color:#5c2b2b}}
+h2{font-size:13px;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;margin:18px 4px 6px}
+.item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+  margin:6px 0;display:flex;gap:10px;align-items:center}
+.item .info{flex:1;min-width:0}
+.item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .s{font-size:12px;color:var(--sub)}
+.item .v{font-weight:700;white-space:nowrap;text-align:right}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:var(--chip);margin-right:4px}
+.tag.bad{background:var(--bad);color:#fff}.tag.warn{background:var(--warn);color:#fff}
+.tag.ok{background:var(--ok);color:#fff}
+.btn{border:0;border-radius:10px;padding:9px 14px;background:var(--pri);color:#fff;font-weight:600}
+.btn.ok{background:var(--ok)}.btn.bad{background:var(--bad)}.btn.sec{background:var(--chip);color:var(--txt)}
+.btn.sm{padding:6px 10px;font-size:13px}
+.pago{opacity:.65}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);
+  display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:6}
+nav button{flex:1;background:none;border:0;padding:10px 0 12px;color:var(--sub);font-size:12px}
+nav button span{display:block;font-size:20px}
+nav button.on{color:var(--pri);font-weight:600}
+.fab{position:fixed;right:18px;bottom:76px;width:56px;height:56px;border-radius:50%;border:0;
+  background:var(--pri);color:#fff;font-size:30px;box-shadow:0 4px 12px rgba(0,0,0,.25);z-index:7}
+.vazio{color:var(--sub);text-align:center;padding:24px 0}
+.fundo .barra{height:8px;background:var(--chip);border-radius:4px;overflow:hidden;margin-top:6px}
+.fundo .barra i{display:block;height:100%}
+dialog{border:0;border-radius:16px;padding:0;width:min(520px,94vw);background:var(--card);color:var(--txt)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog form,dialog .corpo{padding:16px}
+dialog h3{margin:0 0 12px}
+label{display:block;font-size:13px;color:var(--sub);margin:10px 0 4px}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;
+  background:var(--bg);color:var(--txt);font:inherit}
+.linha{display:flex;gap:8px}.linha>*{flex:1}
+.acoes{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.seg{display:flex;background:var(--chip);border-radius:10px;padding:3px}
+.seg label{flex:1;margin:0;text-align:center;padding:7px 0;border-radius:8px;color:var(--txt);font-size:13px}
+.seg input{display:none}.seg input:checked+span{font-weight:700;color:var(--pri)}
+.seg label:has(input:checked){background:var(--card)}
+.comp img{max-width:100%;border-radius:10px;display:block;margin-top:8px}
+.comp iframe{width:100%;height:60vh;border:0;margin-top:8px}
+.toast{position:fixed;left:50%;bottom:140px;transform:translateX(-50%);background:#323232;color:#fff;
+  padding:10px 16px;border-radius:10px;z-index:20;display:none;max-width:90vw}
+.cat{display:flex;justify-content:space-between;font-size:13px;padding:3px 0}
+.dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px}
+.dl dt{color:var(--sub)}.dl dd{margin:0}
+</style>
+</head>
+<body>
+<header>
+  <div class="mes">
+    <button onclick="mudaMes(-1)" aria-label="Mês anterior">‹</button>
+    <h1 id="tituloMes">…</h1>
+    <button onclick="mudaMes(1)" aria-label="Próximo mês">›</button>
+  </div>
+  <div class="quem" id="quem"></div>
+</header>
+
+<main>
+  <section id="aba-contas"></section>
+  <section id="aba-entradas" hidden></section>
+  <section id="aba-fundos" hidden></section>
+</main>
+
+<button class="fab" onclick="novo()" aria-label="Adicionar">+</button>
+
+<nav>
+  <button data-aba="contas" class="on" onclick="aba('contas')"><span>🧾</span>Contas</button>
+  <button data-aba="entradas" onclick="aba('entradas')"><span>💰</span>Entradas</button>
+  <button data-aba="fundos" onclick="aba('fundos')"><span>🐷</span>Fundos</button>
+</nav>
+
+<!-- Nova / editar conta -->
+<dialog id="dConta"><form method="dialog" onsubmit="return salvarConta(event)">
+  <h3 id="dContaTit">Nova conta</h3>
+  <input type="hidden" name="id">
+  <label>Descrição</label>
+  <input name="descricao" required placeholder="Ex.: Luz (Celesc)">
+  <div class="linha">
+    <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
+    <div><label>Vencimento</label><input name="vencimento" type="date" required></div>
+  </div>
+  <label>Categoria</label>
+  <input name="categoria" list="listaCat" placeholder="Opcional">
+  <div id="tipoBox">
+    <label>Repetir</label>
+    <div class="seg">
+      <label><input type="radio" name="tipo" value="unica" checked onchange="tipoConta()"><span>Uma vez</span></label>
+      <label><input type="radio" name="tipo" value="fixa" onchange="tipoConta()"><span>Todo mês</span></label>
+      <label><input type="radio" name="tipo" value="parcelada" onchange="tipoConta()"><span>Parcelada</span></label>
+    </div>
+    <div id="parcBox" hidden><label>Número de parcelas</label><input name="parcelas" type="number" min="2" max="120" value="2"></div>
+  </div>
+  <div id="futBox" hidden>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--txt)">
+      <input type="checkbox" name="aplicar_futuras" style="width:auto"> Mudar também nos próximos meses
+    </label>
+  </div>
+  <label>Observação</label>
+  <input name="obs" placeholder="Opcional (código de barras, chave Pix…)">
+  <div class="acoes">
+    <button type="button" class="btn sec" onclick="fechar('dConta')">Cancelar</button>
+    <button class="btn">Salvar</button>
+  </div>
+</form></dialog>
+
+<!-- Pagar -->
+<dialog id="dPagar"><form method="dialog" onsubmit="return pagar(event)">
+  <h3>Marcar como paga</h3>
+  <div id="pagarNome" style="font-weight:600"></div>
+  <input type="hidden" name="id">
+  <div class="linha">
+    <div><label>Valor pago (R$)</label><input name="valor_pago" inputmode="decimal"></div>
+    <div><label>Data do pagamento</label><input name="data" type="date"></div>
+  </div>
+  <label>Comprovante (foto ou PDF, opcional)</label>
+  <input name="arquivo" type="file" accept="image/*,application/pdf">
+  <div class="acoes">
+    <button type="button" class="btn sec" onclick="fechar('dPagar')">Cancelar</button>
+    <button class="btn ok">✔ Pago</button>
+  </div>
+</form></dialog>
+
+<!-- Detalhes da conta -->
+<dialog id="dDet"><div class="corpo">
+  <h3 id="detTit"></h3>
+  <dl class="dl" id="detDl"></dl>
+  <div class="comp" id="detComp"></div>
+  <div class="acoes" id="detAcoes"></div>
+</div></dialog>
+
+<!-- Nova entrada -->
+<dialog id="dEntrada"><form method="dialog" onsubmit="return salvarEntrada(event)">
+  <h3>Nova entrada de dinheiro</h3>
+  <label>Descrição</label>
+  <input name="descricao" required placeholder="Ex.: Salário, venda de celular">
+  <div class="linha">
+    <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
+    <div><label>Data</label><input name="data" type="date" required></div>
+  </div>
+  <label>Categoria</label>
+  <input name="categoria" list="listaCat" placeholder="Opcional">
+  <label>Comprovante (opcional)</label>
+  <input name="arquivo" type="file" accept="image/*,application/pdf">
+  <div class="acoes">
+    <button type="button" class="btn sec" onclick="fechar('dEntrada')">Cancelar</button>
+    <button class="btn">Salvar</button>
+  </div>
+</form></dialog>
+
+<!-- Fundo -->
+<dialog id="dFundo"><div class="corpo">
+  <h3 id="fundoTit"></h3>
+  <div id="fundoInfo"></div>
+  <form onsubmit="return movimentar(event)" style="padding:0">
+    <input type="hidden" name="fundo_id">
+    <div class="linha">
+      <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
+      <div><label>Data</label><input name="data" type="date" required></div>
+    </div>
+    <label>Descrição</label><input name="descricao" placeholder="Opcional">
+    <div class="acoes">
+      <button type="submit" name="tipo" value="retirada" class="btn bad" onclick="this.form.dataset.tipo='retirada'">− Retirar</button>
+      <button type="submit" name="tipo" value="aporte" class="btn ok" onclick="this.form.dataset.tipo='aporte'">+ Guardar</button>
+    </div>
+  </form>
+  <h2>Histórico</h2>
+  <div id="fundoMovs"></div>
+  <div class="acoes">
+    <button class="btn sec sm" onclick="editarFundo()">Editar fundo</button>
+    <button class="btn sec" onclick="fechar('dFundo')">Fechar</button>
+  </div>
+</div></dialog>
+
+<!-- Novo/editar fundo -->
+<dialog id="dNovoFundo"><form method="dialog" onsubmit="return salvarFundo(event)">
+  <h3 id="nfTit">Novo fundo</h3>
+  <input type="hidden" name="id">
+  <label>Nome</label><input name="nome" required placeholder="Ex.: Viagem, Carro">
+  <div class="linha">
+    <div><label>Meta (R$, opcional)</label><input name="meta" inputmode="decimal"></div>
+    <div><label>Cor</label><input name="cor" type="color" value="#2e7d32" style="height:44px;padding:4px"></div>
+  </div>
+  <div class="acoes">
+    <button type="button" class="btn bad sm" id="nfApagar" hidden onclick="apagarFundo()">Excluir fundo</button>
+    <button type="button" class="btn sec" onclick="fechar('dNovoFundo')">Cancelar</button>
+    <button class="btn">Salvar</button>
+  </div>
+</form></dialog>
+
+<datalist id="listaCat"></datalist>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const brl = v => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const dBR = s => s ? s.slice(8,10)+'/'+s.slice(5,7) : '';
+const dBRano = s => s ? s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4) : '';
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let HOJE = new Date().toISOString().slice(0,10);
+let MES = HOJE.slice(0,7);
+let ABA = 'contas';
+let CONTAS = [], FUNDOS = [], FUNDO_ATUAL = null;
+
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',2600)}
+async function api(url, opt={}){
+  const r = await fetch(url, opt);
+  let d = null; try{ d = await r.json() }catch(e){}
+  if(!r.ok){ throw new Error((d&&d.erro)||('Erro '+r.status)) }
+  return d;
+}
+const json = (method, body) => ({method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+function abrir(id){$('#'+id).showModal()}
+function fechar(id){$('#'+id).close()}
+
+function mudaMes(n){
+  const [a,m] = MES.split('-').map(Number);
+  const d = new Date(a, m-1+n, 1);
+  MES = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  carregar();
+}
+function aba(n){
+  ABA = n;
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.aba===n));
+  ['contas','entradas','fundos'].forEach(x=>$('#aba-'+x).hidden = x!==n);
+  carregar();
+}
+function novo(){
+  if(ABA==='contas') novaConta();
+  else if(ABA==='entradas') novaEntrada();
+  else novoFundo();
+}
+
+async function carregar(){
+  const [a,m] = MES.split('-').map(Number);
+  const t = new Date(a,m-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  $('#tituloMes').textContent = t.charAt(0).toUpperCase()+t.slice(1);
+  try{
+    if(ABA==='contas') await carregarContas();
+    else if(ABA==='entradas') await carregarEntradas();
+    else await carregarFundos();
+  }catch(e){ toast(e.message) }
+}
+
+function statusConta(c){
+  if(c.pago) return '<span class="tag ok">paga</span>';
+  if(c.vencimento < HOJE) return '<span class="tag bad">vencida</span>';
+  if(c.vencimento === HOJE) return '<span class="tag warn">vence hoje</span>';
+  return '';
+}
+function itemConta(c){
+  const extra = [c.categoria, c.parcela && ('parcela '+c.parcela), c.recorrente_id && 'todo mês'].filter(Boolean)
+     .map(t=>'<span class="tag">'+esc(t)+'</span>').join('');
+  const quem = c.pago ? ('pago por '+esc(c.pago_por)+' em '+dBR(c.pago_em)) : ('lançado por '+esc(c.criado_por));
+  return `<div class="item ${c.pago?'pago':''}" onclick="detalhe(${c.id})">
+    <div class="info"><div class="t">${esc(c.descricao)} ${c.comprovante?'📎':''}</div>
+      <div class="s">vence ${dBR(c.vencimento)} · ${quem}</div><div>${statusConta(c)}${extra}</div></div>
+    <div class="v">${brl(c.pago ? (c.valor_pago ?? c.valor) : c.valor)}<br>
+      ${c.pago?'':`<button class="btn ok sm" onclick="event.stopPropagation();abrirPagar(${c.id})">Pagar</button>`}</div>
+  </div>`;
+}
+
+async function carregarContas(){
+  const [r, d] = await Promise.all([api('api/resumo?mes='+MES), api('api/contas?mes='+MES)]);
+  CONTAS = d.contas.concat(d.atrasadas_meses_anteriores);
+  const abertas = d.contas.filter(c=>!c.pago), pagas = d.contas.filter(c=>c.pago);
+  const ant = d.atrasadas_meses_anteriores;
+  let h = `<div class="resumo">
+    <div class="box"><small>Entrou no mês</small><b style="color:var(--ok)">${brl(r.entradas)}</b></div>
+    <div class="box"><small>Já pago</small><b>${brl(r.contas_pago)}</b></div>
+    <div class="box"><small>Falta pagar (${r.n_a_pagar})</small><b style="color:var(--warn)">${brl(r.contas_a_pagar)}</b></div>
+    <div class="box"><small>Sobra (entrou − pago − guardado)</small><b style="color:${r.sobra<0?'var(--bad)':'var(--txt)'}">${brl(r.sobra)}</b></div>
+  </div>`;
+  if(r.vencidas_n) h += `<div class="alerta">⚠ ${r.vencidas_n} conta${r.vencidas_n>1?'s':''} vencida${r.vencidas_n>1?'s':''}: ${brl(r.vencidas_total)}</div>`;
+  if(ant.length){ h += '<h2>Atrasadas de meses anteriores</h2>' + ant.map(itemConta).join('') }
+  h += '<h2>A pagar</h2>' + (abertas.length ? abertas.map(itemConta).join('') : '<div class="vazio">Nada a pagar neste mês 🎉</div>');
+  if(pagas.length) h += '<h2>Pagas</h2>' + pagas.map(itemConta).join('');
+  if(r.categorias.length){
+    h += '<h2>Por categoria</h2><div class="box">' + r.categorias.map(c=>`<div class="cat"><span>${esc(c.categoria)}</span><b>${brl(c.total)}</b></div>`).join('') + '</div>';
+  }
+  $('#aba-contas').innerHTML = h;
+}
+
+function tipoConta(){
+  const t = document.querySelector('#dConta [name=tipo]:checked').value;
+  $('#parcBox').hidden = t!=='parcelada';
+}
+function novaConta(){
+  const f = $('#dConta form'); f.reset(); f.id.value='';
+  $('#dContaTit').textContent='Nova conta';
+  f.vencimento.value = MES===HOJE.slice(0,7) ? HOJE : MES+'-10';
+  $('#tipoBox').hidden=false; $('#futBox').hidden=true; tipoConta();
+  abrir('dConta');
+}
+function editarConta(id){
+  const c = CONTAS.find(x=>x.id===id); fechar('dDet');
+  const f = $('#dConta form'); f.reset();
+  $('#dContaTit').textContent='Editar conta';
+  f.id.value=c.id; f.descricao.value=c.descricao; f.valor.value=String(c.valor).replace('.',',');
+  f.vencimento.value=c.vencimento; f.categoria.value=c.categoria||''; f.obs.value=c.obs||'';
+  $('#tipoBox').hidden=true; $('#futBox').hidden=!c.recorrente_id;
+  abrir('dConta');
+}
+async function salvarConta(ev){
+  ev.preventDefault();
+  const f = ev.target, tipo = (f.querySelector('[name=tipo]:checked')||{}).value;
+  const body = {descricao:f.descricao.value, valor:f.valor.value, vencimento:f.vencimento.value,
+    categoria:f.categoria.value, obs:f.obs.value};
+  try{
+    if(f.id.value){ body.aplicar_futuras = f.aplicar_futuras.checked; await api('api/contas/'+f.id.value, json('PUT', body)) }
+    else{
+      body.recorrente = tipo==='fixa';
+      body.parcelas = tipo==='parcelada' ? Number(f.parcelas.value) : 1;
+      await api('api/contas', json('POST', body));
+    }
+    fechar('dConta'); toast('Conta salva'); carregar(); carregarCategorias();
+  }catch(e){ toast(e.message) }
+  return false;
+}
+
+function abrirPagar(id){
+  const c = CONTAS.find(x=>x.id===id), f = $('#dPagar form'); f.reset();
+  f.id.value=id; f.valor_pago.value=String(c.valor).replace('.',','); f.data.value=HOJE;
+  $('#pagarNome').textContent = c.descricao+' — vence '+dBRano(c.vencimento);
+  fechar('dDet'); abrir('dPagar');
+}
+
+// Reduz fotos do celular (4–8 MB) para ~300 KB antes de enviar
+async function reduzir(file){
+  if(!file || !file.type.startsWith('image/') || file.type==='image/heic') return file;
+  try{
+    const img = await createImageBitmap(file);
+    const k = Math.min(1, 1600/Math.max(img.width, img.height));
+    const c = document.createElement('canvas'); c.width=Math.round(img.width*k); c.height=Math.round(img.height*k);
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    const b = await new Promise(r=>c.toBlob(r,'image/jpeg',0.82));
+    return b && b.size < file.size ? new File([b], 'comprovante.jpg', {type:'image/jpeg'}) : file;
+  }catch(e){ return file }
+}
+async function formComArquivo(f){
+  const fd = new FormData(f);
+  const arq = f.arquivo && f.arquivo.files[0];
+  fd.delete('arquivo');
+  if(arq) fd.append('arquivo', await reduzir(arq));
+  return fd;
+}
+async function pagar(ev){
+  ev.preventDefault();
+  const f = ev.target, btn = f.querySelector('.btn.ok'); btn.disabled = true;
+  try{
+    await api('api/contas/'+f.id.value+'/pagar', {method:'POST', body: await formComArquivo(f)});
+    fechar('dPagar'); toast('Marcada como paga ✔'); carregar();
+  }catch(e){ toast(e.message) } finally{ btn.disabled=false }
+  return false;
+}
+
+function mostrarComp(nome, alvo){
+  if(!nome){ alvo.innerHTML=''; return }
+  const u = 'api/comprovante/'+encodeURIComponent(nome);
+  alvo.innerHTML = nome.toLowerCase().endsWith('.pdf')
+    ? `<iframe src="${u}"></iframe><a href="${u}" download>Baixar PDF</a>`
+    : `<a href="${u}" download><img src="${u}" alt="comprovante"></a>`;
+}
+function detalhe(id){
+  const c = CONTAS.find(x=>x.id===id);
+  $('#detTit').textContent = c.descricao;
+  const linhas = [
+    ['Valor', brl(c.valor)], ['Vencimento', dBRano(c.vencimento)],
+    c.categoria && ['Categoria', esc(c.categoria)], c.parcela && ['Parcela', c.parcela],
+    c.recorrente_id && ['Repete', 'todo mês'],
+    ['Lançado por', esc(c.criado_por)],
+    c.pago && ['Pago', brl(c.valor_pago ?? c.valor)+' em '+dBRano(c.pago_em)+' por '+esc(c.pago_por)],
+    c.obs && ['Obs.', esc(c.obs)],
+  ].filter(Boolean);
+  $('#detDl').innerHTML = linhas.map(([a,b])=>`<dt>${a}</dt><dd>${b}</dd>`).join('');
+  mostrarComp(c.comprovante, $('#detComp'));
+  let a = `<button class="btn bad sm" onclick="apagarConta(${c.id})">Excluir</button>
+           <button class="btn sec sm" onclick="editarConta(${c.id})">Editar</button>`;
+  if(c.pago){
+    a += `<label class="btn sec sm" style="margin:0;color:var(--txt)">📎 ${c.comprovante?'Trocar':'Anexar'} comprovante
+            <input type="file" accept="image/*,application/pdf" hidden onchange="anexar(${c.id}, this)"></label>
+          <button class="btn sec sm" onclick="desfazer(${c.id})">Desfazer pagamento</button>`;
+  } else a += `<button class="btn ok" onclick="abrirPagar(${c.id})">Pagar</button>`;
+  a += `<button class="btn sec" onclick="fechar('dDet')">Fechar</button>`;
+  $('#detAcoes').innerHTML = a;
+  abrir('dDet');
+}
+async function anexar(id, inp){
+  const fd = new FormData(); fd.append('arquivo', await reduzir(inp.files[0]));
+  try{ await api('api/contas/'+id+'/comprovante', {method:'POST', body:fd}); fechar('dDet'); toast('Comprovante anexado'); carregar() }
+  catch(e){ toast(e.message) }
+}
+async function desfazer(id){
+  if(!confirm('Desfazer o pagamento? O comprovante anexado será apagado.')) return;
+  await api('api/contas/'+id+'/desfazer', {method:'POST'}); fechar('dDet'); carregar();
+}
+async function apagarConta(id){
+  const c = CONTAS.find(x=>x.id===id); let q = '';
+  if(c.recorrente_id){
+    const todas = confirm('Esta conta se repete todo mês.\n\nOK = parar de repetir (apaga esta e as próximas não pagas)\nCancelar = escolher apagar só este mês');
+    if(todas) q='?futuras=1';
+    else if(!confirm('Apagar só a deste mês?')) return;
+  } else if(!confirm('Excluir "'+c.descricao+'"?')) return;
+  try{ await api('api/contas/'+id+q, {method:'DELETE'}); fechar('dDet'); toast('Excluída'); carregar() }
+  catch(e){ toast(e.message) }
+}
+
+// ---------------- entradas
+async function carregarEntradas(){
+  const l = await api('api/entradas?mes='+MES);
+  const tot = l.reduce((s,e)=>s+e.valor,0);
+  let h = `<div class="resumo"><div class="box" style="grid-column:1/-1"><small>Total que entrou no mês</small><b style="color:var(--ok)">${brl(tot)}</b></div></div>`;
+  h += l.length ? l.map(e=>`<div class="item" onclick='verEntrada(${JSON.stringify(e).replace(/'/g,"&#39;")})'>
+      <div class="info"><div class="t">${esc(e.descricao)} ${e.comprovante?'📎':''}</div>
+      <div class="s">${dBR(e.data)} · lançado por ${esc(e.criado_por)}</div>${e.categoria?'<span class="tag">'+esc(e.categoria)+'</span>':''}</div>
+      <div class="v" style="color:var(--ok)">+ ${brl(e.valor)}</div></div>`).join('')
+    : '<div class="vazio">Nenhuma entrada neste mês</div>';
+  $('#aba-entradas').innerHTML = h;
+}
+function novaEntrada(){
+  const f = $('#dEntrada form'); f.reset();
+  f.data.value = MES===HOJE.slice(0,7) ? HOJE : MES+'-01';
+  abrir('dEntrada');
+}
+async function salvarEntrada(ev){
+  ev.preventDefault();
+  try{ await api('api/entradas', {method:'POST', body: await formComArquivo(ev.target)}); fechar('dEntrada'); toast('Entrada salva'); carregar(); carregarCategorias() }
+  catch(e){ toast(e.message) }
+  return false;
+}
+function verEntrada(e){
+  $('#detTit').textContent = e.descricao;
+  $('#detDl').innerHTML = [['Valor',brl(e.valor)],['Data',dBRano(e.data)],e.categoria&&['Categoria',esc(e.categoria)],['Lançado por',esc(e.criado_por)],e.obs&&['Obs.',esc(e.obs)]]
+     .filter(Boolean).map(([a,b])=>`<dt>${a}</dt><dd>${b}</dd>`).join('');
+  mostrarComp(e.comprovante, $('#detComp'));
+  $('#detAcoes').innerHTML = `<button class="btn bad sm" onclick="apagarEntrada(${e.id})">Excluir</button><button class="btn sec" onclick="fechar('dDet')">Fechar</button>`;
+  abrir('dDet');
+}
+async function apagarEntrada(id){
+  if(!confirm('Excluir esta entrada?')) return;
+  await api('api/entradas/'+id, {method:'DELETE'}); fechar('dDet'); carregar();
+}
+
+// ---------------- fundos
+async function carregarFundos(){
+  FUNDOS = await api('api/fundos');
+  const tot = FUNDOS.reduce((s,f)=>s+f.saldo,0);
+  let h = `<div class="resumo"><div class="box" style="grid-column:1/-1"><small>Total guardado nos fundos</small><b>${brl(tot)}</b></div></div>`;
+  h += FUNDOS.map(f=>{
+    const p = f.meta>0 ? Math.min(100, Math.max(0, f.saldo/f.meta*100)) : 0;
+    return `<div class="item fundo" onclick="abrirFundo(${f.id})"><div class="info">
+      <div class="t">🐷 ${esc(f.nome)}</div>
+      <div class="s">${f.meta>0 ? 'meta '+brl(f.meta)+' · '+p.toFixed(0)+'%' : 'sem meta'}</div>
+      ${f.meta>0?`<div class="barra"><i style="width:${p}%;background:${esc(f.cor)}"></i></div>`:''}
+      </div><div class="v">${brl(f.saldo)}</div></div>`}).join('') || '<div class="vazio">Nenhum fundo</div>';
+  h += '<div class="vazio" style="font-size:13px">Toque num fundo para guardar ou retirar dinheiro.<br>Use o + para criar um fundo novo.</div>';
+  $('#aba-fundos').innerHTML = h;
+}
+async function abrirFundo(id){
+  FUNDO_ATUAL = FUNDOS.find(f=>f.id===id);
+  const f = FUNDO_ATUAL, form = $('#dFundo form'); form.reset();
+  form.fundo_id.value = id; form.data.value = HOJE;
+  $('#fundoTit').textContent = '🐷 '+f.nome;
+  $('#fundoInfo').innerHTML = `<div class="box"><small>Saldo</small><b>${brl(f.saldo)}</b>${f.meta>0?' <small>de '+brl(f.meta)+'</small>':''}</div>`;
+  const movs = await api('api/fundos/'+id+'/movimentos');
+  $('#fundoMovs').innerHTML = movs.length ? movs.map(m=>`<div class="item"><div class="info">
+      <div class="t">${m.tipo==='aporte'?'Guardou':'Retirou'}${m.descricao?' — '+esc(m.descricao):''}</div>
+      <div class="s">${dBRano(m.data)} · ${esc(m.criado_por)}</div></div>
+      <div class="v" style="color:${m.tipo==='aporte'?'var(--ok)':'var(--bad)'}">${m.tipo==='aporte'?'+':'−'} ${brl(m.valor)}<br>
+      <button class="btn sec sm" onclick="apagarMov(${m.id})">✕</button></div></div>`).join('')
+    : '<div class="vazio">Sem movimentos ainda</div>';
+  if(!$('#dFundo').open) abrir('dFundo');
+}
+async function movimentar(ev){
+  ev.preventDefault();
+  const f = ev.target, tipo = (ev.submitter && ev.submitter.value) || f.dataset.tipo;
+  try{
+    await api('api/fundos/'+f.fundo_id.value+'/movimentos', json('POST', {tipo, valor:f.valor.value, data:f.data.value, descricao:f.descricao.value}));
+    toast(tipo==='aporte'?'Guardado 🐷':'Retirado');
+    FUNDOS = await api('api/fundos'); await abrirFundo(Number(f.fundo_id.value)); carregarFundos();
+  }catch(e){ toast(e.message) }
+  return false;
+}
+async function apagarMov(id){
+  if(!confirm('Apagar este movimento?')) return;
+  await api('api/movimentos/'+id, {method:'DELETE'});
+  FUNDOS = await api('api/fundos'); await abrirFundo(FUNDO_ATUAL.id); carregarFundos();
+}
+function novoFundo(){
+  const f = $('#dNovoFundo form'); f.reset(); f.id.value=''; $('#nfTit').textContent='Novo fundo'; $('#nfApagar').hidden=true;
+  abrir('dNovoFundo');
+}
+function editarFundo(){
+  const x = FUNDO_ATUAL, f = $('#dNovoFundo form'); fechar('dFundo');
+  f.id.value=x.id; f.nome.value=x.nome; f.meta.value=x.meta?String(x.meta).replace('.',','):''; f.cor.value=x.cor||'#2e7d32';
+  $('#nfTit').textContent='Editar fundo'; $('#nfApagar').hidden=false; abrir('dNovoFundo');
+}
+async function salvarFundo(ev){
+  ev.preventDefault(); const f = ev.target;
+  const body = {nome:f.nome.value, meta:f.meta.value, cor:f.cor.value};
+  try{
+    if(f.id.value) await api('api/fundos/'+f.id.value, json('PUT', body)); else await api('api/fundos', json('POST', body));
+    fechar('dNovoFundo'); carregar();
+  }catch(e){ toast(e.message) }
+  return false;
+}
+async function apagarFundo(){
+  const f = $('#dNovoFundo form');
+  if(!confirm('Excluir o fundo "'+f.nome.value+'" e todo o histórico dele?')) return;
+  await api('api/fundos/'+f.id.value, {method:'DELETE'}); fechar('dNovoFundo'); carregar();
+}
+
+async function carregarCategorias(){
+  const cs = await api('api/categorias');
+  $('#listaCat').innerHTML = cs.map(c=>`<option value="${esc(c)}">`).join('');
+}
+
+(async()=>{
+  try{
+    const e = await api('api/eu'); HOJE = e.hoje; MES = HOJE.slice(0,7);
+    $('#quem').textContent = 'Olá, '+e.usuario;
+  }catch(err){}
+  carregar(); carregarCategorias();
+})();
+</script>
+</body>
+</html>
