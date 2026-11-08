@@ -101,6 +101,13 @@ CREATE TABLE IF NOT EXISTS fundos (
     criado_por TEXT DEFAULT '',
     criado_em TEXT
 );
+CREATE TABLE IF NOT EXISTS acessos (
+    user_id TEXT PRIMARY KEY,
+    nome TEXT DEFAULT '',
+    login TEXT DEFAULT '',
+    permitido INTEGER NOT NULL DEFAULT 0,
+    visto_em TEXT
+);
 CREATE TABLE IF NOT EXISTS movimentos (
     id INTEGER PRIMARY KEY,
     fundo_id INTEGER NOT NULL REFERENCES fundos(id) ON DELETE CASCADE,
@@ -230,37 +237,88 @@ def ok(dados=None):
 
 
 # --------------------------------------------------------------------------- middleware
-def usuarios_permitidos() -> set[str]:
-    """Opção do add-on: lista de usuários do HA (login ou nome) que podem abrir.
-    Vazia = todos os usuários do HA."""
-    try:
-        op = json.loads((DATA_DIR / "options.json").read_text())
-        return {str(u).strip().lower() for u in op.get("usuarios_permitidos") or [] if str(u).strip()}
-    except Exception:
-        return set()
+# --------------------------------------------------------------------------- usuários
+# Administradores do HA sempre entram e veem a tela ⚙ Usuários.
+# Os demais usuários só entram se um admin liberar (tabela "acessos").
+_cache_usuarios = {"t": 0.0, "lista": None}
 
 
-def pode_acessar(req) -> bool:
-    lista = usuarios_permitidos()
-    if not lista:
-        return True
-    nomes = {(req.headers.get(h) or "").strip().lower()
-             for h in ("X-Remote-User-Name", "X-Remote-User-Display-Name")}
-    return bool(nomes & lista)
+async def usuarios_ha():
+    """Lista os usuários do HA (websocket config/auth/list, com o token do Supervisor)."""
+    import time
+    if _cache_usuarios["lista"] is not None and time.monotonic() - _cache_usuarios["t"] < 60:
+        return _cache_usuarios["lista"]
+    lista = None
+    if SUPERVISOR_TOKEN:
+        try:
+            async with ClientSession(timeout=ClientTimeout(total=10)) as s:
+                async with s.ws_connect("http://supervisor/core/websocket") as ws:
+                    await ws.receive_json()  # auth_required
+                    await ws.send_json({"type": "auth", "access_token": SUPERVISOR_TOKEN})
+                    if (await ws.receive_json()).get("type") == "auth_ok":
+                        await ws.send_json({"id": 1, "type": "config/auth/list"})
+                        r = await ws.receive_json()
+                        if r.get("success"):
+                            lista = [
+                                {"id": u["id"], "nome": u.get("name") or u.get("username") or "?",
+                                 "login": u.get("username") or "",
+                                 "admin": "system-admin" in (u.get("group_ids") or []) or u.get("is_owner", False)}
+                                for u in r["result"]
+                                if not u.get("system_generated") and u.get("is_active", True)]
+        except Exception as e:
+            log.warning("Não consegui listar os usuários do HA: %s", e)
+    _cache_usuarios.update(t=time.monotonic(), lista=lista)
+    return lista
+
+
+def registrar_visto(req):
+    uid = req.headers.get("X-Remote-User-Id")
+    if not uid:
+        return
+    with db() as con:
+        con.execute("""INSERT INTO acessos(user_id, nome, login, visto_em) VALUES (?,?,?,?)
+                       ON CONFLICT(user_id) DO UPDATE SET nome=excluded.nome, login=excluded.login,
+                       visto_em=excluded.visto_em""",
+                    (uid, req.headers.get("X-Remote-User-Display-Name") or "",
+                     req.headers.get("X-Remote-User-Name") or "", agora_iso()))
+
+
+async def perfil(req):
+    """-> (é_admin, pode_entrar)"""
+    if DEV:
+        return True, True
+    uid = req.headers.get("X-Remote-User-Id")
+    if not uid:
+        return False, False
+    registrar_visto(req)
+    lista = await usuarios_ha()
+    with db() as con:
+        if lista is not None:
+            admin = any(u["id"] == uid and u["admin"] for u in lista)
+        else:
+            # sem acesso à lista do HA: o primeiro usuário que abriu o app é o admin
+            p = con.execute("SELECT user_id FROM acessos ORDER BY rowid LIMIT 1").fetchone()
+            admin = bool(p and p[0] == uid)
+        a = con.execute("SELECT permitido FROM acessos WHERE user_id=?", (uid,)).fetchone()
+    return admin, admin or bool(a and a[0])
 
 
 SEM_ACESSO = """<!DOCTYPE html><html lang="pt-BR"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#555">
 <div style="font-size:48px">🔒</div><h2>Sem acesso</h2>
-<p>Seu usuário não está liberado nas Contas da Casa.</p></body></html>"""
+<p>Peça para um administrador liberar seu usuário em ⚙ Usuários, dentro das Contas da Casa.</p>
+<p><button onclick="location.reload()" style="padding:10px 18px;font-size:16px">Tentar de novo</button></p>
+</body></html>"""
 
 
 @web.middleware
 async def guarda(req: web.Request, handler):
     if not DEV and req.remote not in (INGRESS_IP, "127.0.0.1"):
         return web.Response(status=403, text="Acesse pelo Home Assistant")
-    if not DEV and not pode_acessar(req):
+    admin, pode = await perfil(req)
+    req["admin"] = admin
+    if not pode:
         if req.path.startswith("/api/"):
             return web.json_response({"erro": "Sem acesso"}, status=403)
         return web.Response(status=403, text=SEM_ACESSO, content_type="text/html")
@@ -282,7 +340,35 @@ async def index(req):
 
 
 async def eu(req):
-    return ok({"usuario": usuario(req), "hoje": hoje().isoformat()})
+    return ok({"usuario": usuario(req), "hoje": hoje().isoformat(), "admin": req["admin"]})
+
+
+async def listar_acessos(req):
+    if not req["admin"]:
+        raise web.HTTPForbidden(text="Só administradores")
+    lista = await usuarios_ha()
+    with db() as con:
+        vistos = {r["user_id"]: dict(r) for r in con.execute("SELECT * FROM acessos ORDER BY rowid")}
+    if lista is None:  # fallback: só quem já abriu o app; o primeiro é o admin
+        lista = [{"id": k, "nome": v["nome"] or v["login"], "login": v["login"], "admin": i == 0}
+                 for i, (k, v) in enumerate(vistos.items())]
+    eu_id = req.headers.get("X-Remote-User-Id")
+    return ok([{**u, "permitido": bool(u["admin"] or (vistos.get(u["id"]) or {}).get("permitido")),
+                "eu": u["id"] == eu_id} for u in sorted(lista, key=lambda u: (not u["admin"], u["nome"].lower()))])
+
+
+async def mudar_acesso(req):
+    if not req["admin"]:
+        raise web.HTTPForbidden(text="Só administradores")
+    d = await req.json()
+    uid = str(d.get("id") or "")
+    if not uid:
+        raise web.HTTPBadRequest(text="id obrigatório")
+    with db() as con:
+        con.execute("""INSERT INTO acessos(user_id, nome, login, permitido) VALUES (?,?,?,?)
+                       ON CONFLICT(user_id) DO UPDATE SET permitido=excluded.permitido""",
+                    (uid, d.get("nome") or "", d.get("login") or "", 1 if d.get("permitido") else 0))
+    return ok()
 
 
 # --------------------------------------------------------------------------- contas
@@ -752,6 +838,8 @@ def criar_app():
     r.add_get("/", index)
     r.add_get("/api/eu", eu)
     r.add_get("/api/resumo", resumo)
+    r.add_get("/api/acessos", listar_acessos)
+    r.add_post("/api/acessos", mudar_acesso)
     r.add_get("/api/categorias", categorias)
     r.add_get("/api/hoje", hoje_api)
     r.add_get("/api/contas", listar_contas)

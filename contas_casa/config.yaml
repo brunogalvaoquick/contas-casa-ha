@@ -1,5 +1,5 @@
 name: Contas da Casa
-version: "1.1.0"
+version: "1.2.0"
 slug: contas_casa
 description: Contas a pagar com comprovante, entradas e fundos da casa — para o casal ver junto
 url: https://github.com/brunogalvaoquick/contas-casa-ha
@@ -17,8 +17,5 @@ panel_title: Contas
 panel_admin: false
 homeassistant_api: true
 backup: hot
-options:
-  usuarios_permitidos: []
-schema:
-  usuarios_permitidos:
-    - str
+options: {}
+schema: {}
