@@ -230,10 +230,40 @@ def ok(dados=None):
 
 
 # --------------------------------------------------------------------------- middleware
+def usuarios_permitidos() -> set[str]:
+    """Opção do add-on: lista de usuários do HA (login ou nome) que podem abrir.
+    Vazia = todos os usuários do HA."""
+    try:
+        op = json.loads((DATA_DIR / "options.json").read_text())
+        return {str(u).strip().lower() for u in op.get("usuarios_permitidos") or [] if str(u).strip()}
+    except Exception:
+        return set()
+
+
+def pode_acessar(req) -> bool:
+    lista = usuarios_permitidos()
+    if not lista:
+        return True
+    nomes = {(req.headers.get(h) or "").strip().lower()
+             for h in ("X-Remote-User-Name", "X-Remote-User-Display-Name")}
+    return bool(nomes & lista)
+
+
+SEM_ACESSO = """<!DOCTYPE html><html lang="pt-BR"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#555">
+<div style="font-size:48px">🔒</div><h2>Sem acesso</h2>
+<p>Seu usuário não está liberado nas Contas da Casa.</p></body></html>"""
+
+
 @web.middleware
 async def guarda(req: web.Request, handler):
     if not DEV and req.remote not in (INGRESS_IP, "127.0.0.1"):
         return web.Response(status=403, text="Acesse pelo Home Assistant")
+    if not DEV and not pode_acessar(req):
+        if req.path.startswith("/api/"):
+            return web.json_response({"erro": "Sem acesso"}, status=403)
+        return web.Response(status=403, text=SEM_ACESSO, content_type="text/html")
     try:
         resp = await handler(req)
     except web.HTTPException as e:
