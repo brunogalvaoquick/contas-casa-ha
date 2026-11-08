@@ -1,3 +1,9 @@
+## 1.4.0
+- Volta a opção simples `usuarios_permitidos` na aba Configuração: escreva o
+  nome ou o login de quem pode usar, um por linha. Administradores do HA
+  sempre entram. Lista vazia = só administradores.
+- O add-on não preenche mais a lista sozinho.
+
 ## 1.3.0
 - Quem pode usar agora fica na aba **Configuração** do add-on (`usuarios`).
   O add-on preenche sozinho com os usuários do HA (liberado: false); é só

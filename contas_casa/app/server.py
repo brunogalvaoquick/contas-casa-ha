@@ -239,7 +239,7 @@ def ok(dados=None):
 # --------------------------------------------------------------------------- middleware
 # --------------------------------------------------------------------------- usuários
 # Administradores do HA sempre entram e veem a tela ⚙ Usuários.
-# Os demais usuários só entram se um admin liberar (aba Configuração do add-on, opção "usuarios").
+# Os demais usuários só entram se um admin liberar (aba Configuração do add-on, opção "usuarios_permitidos").
 _cache_usuarios = {"t": 0.0, "lista": None}
 
 
@@ -314,45 +314,6 @@ async def opcoes_atuais(forcar=False):
     return op
 
 
-async def salvar_opcoes(op):
-    if not SUPERVISOR_TOKEN:
-        return
-    try:
-        async with ClientSession(timeout=ClientTimeout(total=10), headers=_auth()) as s:
-            async with s.post(f"{SUP}/addons/self/options", json={"options": op}) as r:
-                if r.status >= 400:
-                    log.warning("Supervisor recusou a configuração: %s %s", r.status, await r.text())
-                    return
-        _cache_opcoes.update(t=0.0, op=None)
-    except Exception as e:
-        log.warning("Não consegui salvar a configuração: %s", e)
-
-
-async def sincronizar_usuarios(novo=None):
-    """Coloca na Configuração do add-on todos os usuários (não-admin) do HA com
-    liberado: false. Quem já está lá não é mexido."""
-    lista = await usuarios_ha()
-    candidatos = [u for u in (lista or []) if not u["admin"]]
-    if novo and not any(u["login"] == novo["login"] for u in candidatos):
-        candidatos.append(novo)
-    if not candidatos:
-        return
-    op = dict(await opcoes_atuais(forcar=True))
-    usuarios = list(op.get("usuarios") or [])
-    conhecidos = {(u.get("login") or "").lower() for u in usuarios} | \
-                 {(u.get("nome") or "").lower() for u in usuarios}
-    mudou = False
-    for u in candidatos:
-        if (u["login"] or "").lower() in conhecidos:
-            continue
-        usuarios.append({"nome": u["nome"], "login": u["login"], "liberado": False})
-        mudou = True
-    if mudou:
-        op["usuarios"] = usuarios
-        await salvar_opcoes(op)
-        log.info("Usuários adicionados na Configuração: %s", [u["nome"] for u in usuarios])
-
-
 async def perfil(req):
     """-> (é_admin, pode_entrar)"""
     if DEV:
@@ -373,13 +334,9 @@ async def perfil(req):
         admin = bool(p and p[0] == uid)
     if admin:
         return True, True
-    usuarios = (await opcoes_atuais()).get("usuarios") or []
-    achou = [u for u in usuarios
-             if (u.get("login") or "").lower() == login or (u.get("nome") or "").lower() == nome]
-    if not achou:
-        await sincronizar_usuarios({"nome": req.headers.get("X-Remote-User-Display-Name") or login,
-                                    "login": req.headers.get("X-Remote-User-Name") or "", "admin": False})
-    return False, any(u.get("liberado") for u in achou)
+    # aba Configuração: usuarios_permitidos = nomes ou logins, um por linha
+    lista_ok = {str(u).strip().lower() for u in (await opcoes_atuais()).get("usuarios_permitidos") or []}
+    return False, bool({login, nome} & lista_ok - {""})
 
 
 SEM_ACESSO = """<!DOCTYPE html><html lang="pt-BR"><meta charset="utf-8">
@@ -851,10 +808,6 @@ async def publicar_ha(app):
     ev: asyncio.Event = app["publicar"]
     async with ClientSession(timeout=ClientTimeout(total=15), headers=headers) as s:
         while True:
-            try:
-                await sincronizar_usuarios()
-            except Exception as e:
-                log.warning("Falha ao sincronizar usuários: %s", e)
             try:
                 for ent, (estado, attrs) in estados_ha().items():
                     async with s.post(f"{HA_API}/states/{ent}",
