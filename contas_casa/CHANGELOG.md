@@ -1,3 +1,9 @@
+## 1.3.0
+- Quem pode usar agora fica na aba **Configuração** do add-on (`usuarios`).
+  O add-on preenche sozinho com os usuários do HA (liberado: false); é só
+  trocar para `true` e salvar. Administradores do HA sempre entram.
+- Removida a tela ⚙ Usuários de dentro do app.
+
 ## 1.2.0
 - Nova tela ⚙ Usuários (só para administradores do HA): lista os usuários do HA
   e libera cada um com uma chave. Administradores sempre entram.

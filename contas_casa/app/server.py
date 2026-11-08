@@ -239,7 +239,7 @@ def ok(dados=None):
 # --------------------------------------------------------------------------- middleware
 # --------------------------------------------------------------------------- usuários
 # Administradores do HA sempre entram e veem a tela ⚙ Usuários.
-# Os demais usuários só entram se um admin liberar (tabela "acessos").
+# Os demais usuários só entram se um admin liberar (aba Configuração do add-on, opção "usuarios").
 _cache_usuarios = {"t": 0.0, "lista": None}
 
 
@@ -283,6 +283,76 @@ def registrar_visto(req):
                      req.headers.get("X-Remote-User-Name") or "", agora_iso()))
 
 
+# ---- configuração do add-on (aba Configuração do HA)
+SUP = "http://supervisor"
+_cache_opcoes = {"t": 0.0, "op": None}
+
+
+def _auth():
+    return {"Authorization": f"Bearer {SUPERVISOR_TOKEN}"}
+
+
+async def opcoes_atuais(forcar=False):
+    """Opções salvas no Supervisor (valem na hora, sem reiniciar o add-on)."""
+    import time
+    if not forcar and _cache_opcoes["op"] is not None and time.monotonic() - _cache_opcoes["t"] < 15:
+        return _cache_opcoes["op"]
+    op = None
+    if SUPERVISOR_TOKEN:
+        try:
+            async with ClientSession(timeout=ClientTimeout(total=10), headers=_auth()) as s:
+                async with s.get(f"{SUP}/addons/self/info") as r:
+                    op = (await r.json())["data"].get("options") or {}
+        except Exception as e:
+            log.warning("Não consegui ler a configuração do add-on: %s", e)
+    if op is None:
+        try:
+            op = json.loads((DATA_DIR / "options.json").read_text())
+        except Exception:
+            op = {}
+    _cache_opcoes.update(t=time.monotonic(), op=op)
+    return op
+
+
+async def salvar_opcoes(op):
+    if not SUPERVISOR_TOKEN:
+        return
+    try:
+        async with ClientSession(timeout=ClientTimeout(total=10), headers=_auth()) as s:
+            async with s.post(f"{SUP}/addons/self/options", json={"options": op}) as r:
+                if r.status >= 400:
+                    log.warning("Supervisor recusou a configuração: %s %s", r.status, await r.text())
+                    return
+        _cache_opcoes.update(t=0.0, op=None)
+    except Exception as e:
+        log.warning("Não consegui salvar a configuração: %s", e)
+
+
+async def sincronizar_usuarios(novo=None):
+    """Coloca na Configuração do add-on todos os usuários (não-admin) do HA com
+    liberado: false. Quem já está lá não é mexido."""
+    lista = await usuarios_ha()
+    candidatos = [u for u in (lista or []) if not u["admin"]]
+    if novo and not any(u["login"] == novo["login"] for u in candidatos):
+        candidatos.append(novo)
+    if not candidatos:
+        return
+    op = dict(await opcoes_atuais(forcar=True))
+    usuarios = list(op.get("usuarios") or [])
+    conhecidos = {(u.get("login") or "").lower() for u in usuarios} | \
+                 {(u.get("nome") or "").lower() for u in usuarios}
+    mudou = False
+    for u in candidatos:
+        if (u["login"] or "").lower() in conhecidos:
+            continue
+        usuarios.append({"nome": u["nome"], "login": u["login"], "liberado": False})
+        mudou = True
+    if mudou:
+        op["usuarios"] = usuarios
+        await salvar_opcoes(op)
+        log.info("Usuários adicionados na Configuração: %s", [u["nome"] for u in usuarios])
+
+
 async def perfil(req):
     """-> (é_admin, pode_entrar)"""
     if DEV:
@@ -290,24 +360,33 @@ async def perfil(req):
     uid = req.headers.get("X-Remote-User-Id")
     if not uid:
         return False, False
+    login = (req.headers.get("X-Remote-User-Name") or "").lower()
+    nome = (req.headers.get("X-Remote-User-Display-Name") or "").lower()
     registrar_visto(req)
     lista = await usuarios_ha()
-    with db() as con:
-        if lista is not None:
-            admin = any(u["id"] == uid and u["admin"] for u in lista)
-        else:
-            # sem acesso à lista do HA: o primeiro usuário que abriu o app é o admin
+    if lista is not None:
+        admin = any(u["id"] == uid and u["admin"] for u in lista)
+    else:
+        # sem a lista do HA: o primeiro usuário que abriu o app é o admin
+        with db() as con:
             p = con.execute("SELECT user_id FROM acessos ORDER BY rowid LIMIT 1").fetchone()
-            admin = bool(p and p[0] == uid)
-        a = con.execute("SELECT permitido FROM acessos WHERE user_id=?", (uid,)).fetchone()
-    return admin, admin or bool(a and a[0])
+        admin = bool(p and p[0] == uid)
+    if admin:
+        return True, True
+    usuarios = (await opcoes_atuais()).get("usuarios") or []
+    achou = [u for u in usuarios
+             if (u.get("login") or "").lower() == login or (u.get("nome") or "").lower() == nome]
+    if not achou:
+        await sincronizar_usuarios({"nome": req.headers.get("X-Remote-User-Display-Name") or login,
+                                    "login": req.headers.get("X-Remote-User-Name") or "", "admin": False})
+    return False, any(u.get("liberado") for u in achou)
 
 
 SEM_ACESSO = """<!DOCTYPE html><html lang="pt-BR"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#555">
 <div style="font-size:48px">🔒</div><h2>Sem acesso</h2>
-<p>Peça para um administrador liberar seu usuário em ⚙ Usuários, dentro das Contas da Casa.</p>
+<p>Peça para um administrador liberar seu usuário na Configuração do add-on Contas da Casa.</p>
 <p><button onclick="location.reload()" style="padding:10px 18px;font-size:16px">Tentar de novo</button></p>
 </body></html>"""
 
@@ -342,33 +421,6 @@ async def index(req):
 async def eu(req):
     return ok({"usuario": usuario(req), "hoje": hoje().isoformat(), "admin": req["admin"]})
 
-
-async def listar_acessos(req):
-    if not req["admin"]:
-        raise web.HTTPForbidden(text="Só administradores")
-    lista = await usuarios_ha()
-    with db() as con:
-        vistos = {r["user_id"]: dict(r) for r in con.execute("SELECT * FROM acessos ORDER BY rowid")}
-    if lista is None:  # fallback: só quem já abriu o app; o primeiro é o admin
-        lista = [{"id": k, "nome": v["nome"] or v["login"], "login": v["login"], "admin": i == 0}
-                 for i, (k, v) in enumerate(vistos.items())]
-    eu_id = req.headers.get("X-Remote-User-Id")
-    return ok([{**u, "permitido": bool(u["admin"] or (vistos.get(u["id"]) or {}).get("permitido")),
-                "eu": u["id"] == eu_id} for u in sorted(lista, key=lambda u: (not u["admin"], u["nome"].lower()))])
-
-
-async def mudar_acesso(req):
-    if not req["admin"]:
-        raise web.HTTPForbidden(text="Só administradores")
-    d = await req.json()
-    uid = str(d.get("id") or "")
-    if not uid:
-        raise web.HTTPBadRequest(text="id obrigatório")
-    with db() as con:
-        con.execute("""INSERT INTO acessos(user_id, nome, login, permitido) VALUES (?,?,?,?)
-                       ON CONFLICT(user_id) DO UPDATE SET permitido=excluded.permitido""",
-                    (uid, d.get("nome") or "", d.get("login") or "", 1 if d.get("permitido") else 0))
-    return ok()
 
 
 # --------------------------------------------------------------------------- contas
@@ -800,6 +852,10 @@ async def publicar_ha(app):
     async with ClientSession(timeout=ClientTimeout(total=15), headers=headers) as s:
         while True:
             try:
+                await sincronizar_usuarios()
+            except Exception as e:
+                log.warning("Falha ao sincronizar usuários: %s", e)
+            try:
                 for ent, (estado, attrs) in estados_ha().items():
                     async with s.post(f"{HA_API}/states/{ent}",
                                       json={"state": estado, "attributes": attrs}) as r:
@@ -838,8 +894,6 @@ def criar_app():
     r.add_get("/", index)
     r.add_get("/api/eu", eu)
     r.add_get("/api/resumo", resumo)
-    r.add_get("/api/acessos", listar_acessos)
-    r.add_post("/api/acessos", mudar_acesso)
     r.add_get("/api/categorias", categorias)
     r.add_get("/api/hoje", hoje_api)
     r.add_get("/api/contas", listar_contas)

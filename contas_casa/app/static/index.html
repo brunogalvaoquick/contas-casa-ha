@@ -88,8 +88,7 @@ input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);borde
     <h1 id="tituloMes">…</h1>
     <button onclick="mudaMes(1)" aria-label="Próximo mês">›</button>
   </div>
-  <div class="quem"><span id="quem"></span>
-    <button id="btnUsuarios" hidden onclick="abrirUsuarios()" style="background:none;border:0;color:var(--pri);font-size:12px">⚙ Usuários</button></div>
+  <div class="quem" id="quem"></div>
 </header>
 
 <main>
@@ -223,14 +222,6 @@ input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);borde
     <button class="btn">Salvar</button>
   </div>
 </form></dialog>
-
-<!-- Usuários -->
-<dialog id="dUsuarios"><div class="corpo">
-  <h3>Quem pode usar as Contas</h3>
-  <div class="s" style="color:var(--sub);font-size:13px">Administradores do HA sempre entram. Ligue a chave para liberar os outros.</div>
-  <div id="listaUsuarios"></div>
-  <div class="acoes"><button class="btn sec" onclick="fechar('dUsuarios')">Fechar</button></div>
-</div></dialog>
 
 <datalist id="listaCat"></datalist>
 <div class="toast" id="toast"></div>
@@ -554,23 +545,6 @@ async function apagarFundo(){
   await api('api/fundos/'+f.id.value, {method:'DELETE'}); fechar('dNovoFundo'); carregar();
 }
 
-async function abrirUsuarios(){
-  try{
-    const l = await api('api/acessos');
-    $('#listaUsuarios').innerHTML = l.map(u=>`<div class="item"><div class="info">
-        <div class="t">${esc(u.nome)}${u.eu?' (você)':''}</div>
-        <div class="s">${esc(u.login)}${u.admin?' · administrador':''}</div></div>
-        <label class="sw"><input type="checkbox" ${u.permitido?'checked':''} ${u.admin?'disabled':''}
-          onchange='mudarAcesso(${JSON.stringify({id:u.id,nome:u.nome,login:u.login}).replace(/'/g,"&#39;")}, this)'><i></i></label>
-      </div>`).join('') || '<div class="vazio">Nenhum usuário</div>';
-    abrir('dUsuarios');
-  }catch(e){ toast(e.message) }
-}
-async function mudarAcesso(u, el){
-  try{ await api('api/acessos', json('POST', {...u, permitido: el.checked})); toast(el.checked ? u.nome+' liberado' : u.nome+' bloqueado') }
-  catch(e){ el.checked = !el.checked; toast(e.message) }
-}
-
 async function carregarCategorias(){
   const cs = await api('api/categorias');
   $('#listaCat').innerHTML = cs.map(c=>`<option value="${esc(c)}">`).join('');
@@ -579,8 +553,7 @@ async function carregarCategorias(){
 (async()=>{
   try{
     const e = await api('api/eu'); HOJE = e.hoje; MES = HOJE.slice(0,7);
-    $('#quem').textContent = 'Olá, '+e.usuario+(e.admin?' · ':'');
-    $('#btnUsuarios').hidden = !e.admin;
+    $('#quem').textContent = 'Olá, '+e.usuario;
   }catch(err){}
   carregar(); carregarCategorias();
 })();
