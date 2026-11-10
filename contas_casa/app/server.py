@@ -133,6 +133,11 @@ def init_db():
     COMP_DIR.mkdir(parents=True, exist_ok=True)
     with db() as con:
         con.executescript(SCHEMA)
+        cols = {r[1] for r in con.execute("PRAGMA table_info(contas)")}
+        if "tipo" not in cols:  # 1.5.0: gastos do dia ficam na mesma tabela, já pagos
+            con.execute("ALTER TABLE contas ADD COLUMN tipo TEXT NOT NULL DEFAULT 'conta'")
+        if "forma" not in cols:
+            con.execute("ALTER TABLE contas ADD COLUMN forma TEXT DEFAULT ''")
         if not con.execute("SELECT 1 FROM fundos LIMIT 1").fetchone():
             for nome, cor in (("Fundo reserva", "#2e7d32"), ("Fundo seguro", "#1565c0")):
                 con.execute(
@@ -386,7 +391,7 @@ async def listar_contas(req):
     with db() as con:
         gerar_recorrentes(con)
         contas = rows(con.execute(
-            "SELECT * FROM contas WHERE vencimento BETWEEN ? AND ? AND NOT (pago=1 AND valor=0 AND obs=?)"
+            "SELECT * FROM contas WHERE tipo<>'gasto' AND vencimento BETWEEN ? AND ? AND NOT (pago=1 AND valor=0 AND obs=?)"
             " ORDER BY pago, vencimento, id",
             (ini.isoformat(), fim.isoformat(), REMOVIDA)))
         atrasadas = rows(con.execute(
@@ -441,6 +446,9 @@ async def editar_conta(req):
         obs = d.get("obs", c["obs"])
         con.execute("UPDATE contas SET descricao=?, valor=?, vencimento=?, categoria=?, obs=? WHERE id=?",
                     (desc, valor, venc, cat, obs, cid))
+        if c["tipo"] == "gasto":
+            con.execute("UPDATE contas SET valor_pago=?, pago_em=?, forma=? WHERE id=?",
+                        (valor, venc, d.get("forma", c["forma"]), cid))
         # "mudar também os próximos meses" para contas fixas
         if d.get("aplicar_futuras") and c["recorrente_id"]:
             dia = date.fromisoformat(venc).day
@@ -535,6 +543,35 @@ async def ver_comprovante(req):
     if not p.is_file():
         raise web.HTTPNotFound(text="Arquivo não encontrado")
     return web.FileResponse(p)
+
+
+# --------------------------------------------------------------------------- gastos do dia
+async def listar_gastos(req):
+    ini, fim = mes_param(req)
+    with db() as con:
+        return ok(rows(con.execute(
+            "SELECT * FROM contas WHERE tipo='gasto' AND vencimento BETWEEN ? AND ? ORDER BY vencimento DESC, id DESC",
+            (ini.isoformat(), fim.isoformat()))))
+
+
+async def criar_gasto(req):
+    """Gasto já pago: lança e paga de uma vez (mercado, farmácia, gasolina...)."""
+    form = await req.post()
+    desc = (form.get("descricao") or "").strip()
+    if not desc:
+        raise web.HTTPBadRequest(text="Descrição obrigatória")
+    valor = num(form.get("valor"))
+    data = data_ok(form.get("data") or hoje().isoformat())
+    arq = await salvar_arquivo(form.get("arquivo"))
+    quem = usuario(req)
+    with db() as con:
+        con.execute(
+            """INSERT INTO contas(descricao, categoria, valor, vencimento, obs, tipo, forma,
+                                  pago, pago_em, valor_pago, pago_por, comprovante, criado_por, criado_em)
+               VALUES (?,?,?,?,?,'gasto',?,1,?,?,?,?,?,?)""",
+            (desc, (form.get("categoria") or "").strip(), valor, data, (form.get("obs") or "").strip(),
+             (form.get("forma") or "").strip(), data, valor, quem, arq, quem, agora_iso()))
+    return ok()
 
 
 # --------------------------------------------------------------------------- entradas
@@ -656,7 +693,11 @@ def resumo_mes(con, ini: date, fim: date):
           COALESCE(SUM(CASE WHEN pago=1 THEN COALESCE(valor_pago, valor) END),0) pago,
           COALESCE(SUM(CASE WHEN pago=0 THEN valor END),0) a_pagar,
           COUNT(CASE WHEN pago=0 THEN 1 END) n_a_pagar
-        FROM contas WHERE vencimento BETWEEN ? AND ?""", (a, b)).fetchone()
+        FROM contas WHERE tipo<>'gasto' AND vencimento BETWEEN ? AND ?""", (a, b)).fetchone()
+    gastos = con.execute("SELECT COALESCE(SUM(valor),0) FROM contas WHERE tipo='gasto' AND vencimento BETWEEN ? AND ?",
+                         (a, b)).fetchone()[0]
+    gastos_hoje = con.execute("SELECT COALESCE(SUM(valor),0) FROM contas WHERE tipo='gasto' AND vencimento=?",
+                              (hoje().isoformat(),)).fetchone()[0]
     ent = con.execute("SELECT COALESCE(SUM(valor),0) FROM entradas WHERE data BETWEEN ? AND ?",
                       (a, b)).fetchone()[0]
     mov = con.execute("""SELECT
@@ -671,11 +712,13 @@ def resumo_mes(con, ini: date, fim: date):
         "contas_pago": round(c["pago"], 2),
         "contas_a_pagar": round(c["a_pagar"], 2),
         "n_a_pagar": c["n_a_pagar"],
+        "gastos": round(gastos, 2),
+        "gastos_hoje": round(gastos_hoje, 2),
         "entradas": round(ent, 2),
         "aportes": round(mov[0], 2),
         "retiradas": round(mov[1], 2),
-        # dinheiro que entrou menos o que já foi pago e guardado nos fundos
-        "sobra": round(ent - c["pago"] - mov[0] + mov[1], 2),
+        # dinheiro que entrou menos contas pagas, gastos do dia e o guardado nos fundos
+        "sobra": round(ent - c["pago"] - gastos - mov[0] + mov[1], 2),
         "vencidas_n": vencidas[0],
         "vencidas_total": round(vencidas[1], 2),
     }
@@ -699,7 +742,8 @@ async def categorias(req):
         cs = [r[0] for r in con.execute(
             "SELECT DISTINCT categoria FROM contas WHERE categoria<>'' UNION SELECT DISTINCT categoria FROM entradas WHERE categoria<>''")]
     base = ["Moradia", "Luz", "Água", "Internet", "Telefone", "Mercado", "Cartão", "Escola",
-            "Saúde", "Carro", "Combustível", "Impostos", "Lazer", "Outros"]
+            "Saúde", "Farmácia", "Padaria", "Restaurante", "Carro", "Combustível", "Impostos", "Lazer",
+            "Casa", "Roupas", "Outros"]
     return ok(sorted(set(base) | set(cs)))
 
 
@@ -787,6 +831,11 @@ def estados_ha():
         "sensor.contas_casa_a_pagar_mes": (r["contas_a_pagar"], {
             **dinheiro, "friendly_name": "Contas a pagar no mês", "icon": "mdi:cash-clock",
             "quantidade": r["n_a_pagar"], "total_mes": r["contas_total"], "pago": r["contas_pago"]}),
+        "sensor.contas_casa_gastos_hoje": (r["gastos_hoje"], {
+            **dinheiro, "friendly_name": "Gastos do dia", "icon": "mdi:cart-outline",
+            "state_class": "measurement"}),
+        "sensor.contas_casa_gastos_mes": (r["gastos"], {
+            **dinheiro, "friendly_name": "Gastos do dia no mês", "icon": "mdi:cart"}),
         "sensor.contas_casa_entradas_mes": (r["entradas"], {
             **dinheiro, "friendly_name": "Entradas do mês", "icon": "mdi:cash-plus"}),
         "sensor.contas_casa_sobra_mes": (r["sobra"], {
@@ -857,6 +906,8 @@ def criar_app():
     r.add_post("/api/contas/{id:\\d+}/comprovante", comprovante_conta)
     r.add_post("/api/contas/{id:\\d+}/desfazer", desfazer_pagamento)
     r.add_get("/api/comprovante/{nome}", ver_comprovante)
+    r.add_get("/api/gastos", listar_gastos)
+    r.add_post("/api/gastos", criar_gasto)
     r.add_get("/api/entradas", listar_entradas)
     r.add_post("/api/entradas", criar_entrada)
     r.add_delete("/api/entradas/{id:\\d+}", apagar_entrada)

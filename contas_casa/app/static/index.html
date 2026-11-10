@@ -93,6 +93,7 @@ input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);borde
 
 <main>
   <section id="aba-contas"></section>
+  <section id="aba-gastos" hidden></section>
   <section id="aba-entradas" hidden></section>
   <section id="aba-fundos" hidden></section>
 </main>
@@ -101,6 +102,7 @@ input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);borde
 
 <nav>
   <button data-aba="contas" class="on" onclick="aba('contas')"><span>🧾</span>Contas</button>
+  <button data-aba="gastos" onclick="aba('gastos')"><span>🛒</span>Gastos</button>
   <button data-aba="entradas" onclick="aba('entradas')"><span>💰</span>Entradas</button>
   <button data-aba="fundos" onclick="aba('fundos')"><span>🐷</span>Fundos</button>
 </nav>
@@ -163,6 +165,28 @@ input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);borde
   <div class="comp" id="detComp"></div>
   <div class="acoes" id="detAcoes"></div>
 </div></dialog>
+
+<!-- Novo gasto do dia -->
+<dialog id="dGasto"><form method="dialog" onsubmit="return salvarGasto(event)">
+  <h3>Gasto do dia (já pago)</h3>
+  <label>O que foi</label>
+  <input name="descricao" required placeholder="Ex.: Mercado, farmácia, gasolina">
+  <div class="linha">
+    <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
+    <div><label>Data</label><input name="data" type="date" required></div>
+  </div>
+  <div class="linha">
+    <div><label>Categoria</label><input name="categoria" list="listaCat" placeholder="Opcional"></div>
+    <div><label>Pago com</label>
+      <select name="forma"><option>Pix</option><option>Débito</option><option>Crédito</option><option>Dinheiro</option><option value="">Outro</option></select></div>
+  </div>
+  <label>Comprovante / nota (opcional)</label>
+  <input name="arquivo" type="file" accept="image/*,application/pdf">
+  <div class="acoes">
+    <button type="button" class="btn sec" onclick="fechar('dGasto')">Cancelar</button>
+    <button class="btn ok">Salvar gasto</button>
+  </div>
+</form></dialog>
 
 <!-- Nova entrada -->
 <dialog id="dEntrada"><form method="dialog" onsubmit="return salvarEntrada(event)">
@@ -257,11 +281,12 @@ function mudaMes(n){
 function aba(n){
   ABA = n;
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.aba===n));
-  ['contas','entradas','fundos'].forEach(x=>$('#aba-'+x).hidden = x!==n);
+  ['contas','gastos','entradas','fundos'].forEach(x=>$('#aba-'+x).hidden = x!==n);
   carregar();
 }
 function novo(){
   if(ABA==='contas') novaConta();
+  else if(ABA==='gastos') novoGasto();
   else if(ABA==='entradas') novaEntrada();
   else novoFundo();
 }
@@ -272,6 +297,7 @@ async function carregar(){
   $('#tituloMes').textContent = t.charAt(0).toUpperCase()+t.slice(1);
   try{
     if(ABA==='contas') await carregarContas();
+    else if(ABA==='gastos') await carregarGastos();
     else if(ABA==='entradas') await carregarEntradas();
     else await carregarFundos();
   }catch(e){ toast(e.message) }
@@ -302,9 +328,10 @@ async function carregarContas(){
   const ant = d.atrasadas_meses_anteriores;
   let h = `<div class="resumo">
     <div class="box"><small>Entrou no mês</small><b style="color:var(--ok)">${brl(r.entradas)}</b></div>
-    <div class="box"><small>Já pago</small><b>${brl(r.contas_pago)}</b></div>
+    <div class="box"><small>Contas pagas</small><b>${brl(r.contas_pago)}</b></div>
     <div class="box"><small>Falta pagar (${r.n_a_pagar})</small><b style="color:var(--warn)">${brl(r.contas_a_pagar)}</b></div>
-    <div class="box"><small>Sobra (entrou − pago − guardado)</small><b style="color:${r.sobra<0?'var(--bad)':'var(--txt)'}">${brl(r.sobra)}</b></div>
+    <div class="box" onclick="aba('gastos')"><small>Gastos do dia (mês)</small><b>${brl(r.gastos)}</b></div>
+    <div class="box" style="grid-column:1/-1"><small>Sobra (entrou − contas pagas − gastos − guardado)</small><b style="color:${r.sobra<0?'var(--bad)':'var(--txt)'}">${brl(r.sobra)}</b></div>
   </div>`;
   if(r.vencidas_n) h += `<div class="alerta">⚠ ${r.vencidas_n} conta${r.vencidas_n>1?'s':''} vencida${r.vencidas_n>1?'s':''}: ${brl(r.vencidas_total)}</div>`;
   if(ant.length){ h += '<h2>Atrasadas de meses anteriores</h2>' + ant.map(itemConta).join('') }
@@ -330,7 +357,7 @@ function novaConta(){
 function editarConta(id){
   const c = CONTAS.find(x=>x.id===id); fechar('dDet');
   const f = $('#dConta form'); f.reset();
-  $('#dContaTit').textContent='Editar conta';
+  $('#dContaTit').textContent = c.tipo==='gasto' ? 'Editar gasto' : 'Editar conta';
   f.id.value=c.id; f.descricao.value=c.descricao; f.valor.value=String(c.valor).replace('.',',');
   f.vencimento.value=c.vencimento; f.categoria.value=c.categoria||''; f.obs.value=c.obs||'';
   $('#tipoBox').hidden=true; $('#futBox').hidden=!c.recorrente_id;
@@ -400,11 +427,12 @@ function detalhe(id){
   const c = CONTAS.find(x=>x.id===id);
   $('#detTit').textContent = c.descricao;
   const linhas = [
-    ['Valor', brl(c.valor)], ['Vencimento', dBRano(c.vencimento)],
+    ['Valor', brl(c.valor)], [c.tipo==='gasto' ? 'Data' : 'Vencimento', dBRano(c.vencimento)],
     c.categoria && ['Categoria', esc(c.categoria)], c.parcela && ['Parcela', c.parcela],
     c.recorrente_id && ['Repete', 'todo mês'],
     ['Lançado por', esc(c.criado_por)],
     c.pago && ['Pago', brl(c.valor_pago ?? c.valor)+' em '+dBRano(c.pago_em)+' por '+esc(c.pago_por)],
+    c.forma && ['Pago com', esc(c.forma)],
     c.obs && ['Obs.', esc(c.obs)],
   ].filter(Boolean);
   $('#detDl').innerHTML = linhas.map(([a,b])=>`<dt>${a}</dt><dd>${b}</dd>`).join('');
@@ -414,7 +442,7 @@ function detalhe(id){
   if(c.pago){
     a += `<label class="btn sec sm" style="margin:0;color:var(--txt)">📎 ${c.comprovante?'Trocar':'Anexar'} comprovante
             <input type="file" accept="image/*,application/pdf" hidden onchange="anexar(${c.id}, this)"></label>
-          <button class="btn sec sm" onclick="desfazer(${c.id})">Desfazer pagamento</button>`;
+          ${c.tipo==='gasto' ? '' : `<button class="btn sec sm" onclick="desfazer(${c.id})">Desfazer pagamento</button>`}`;
   } else a += `<button class="btn ok" onclick="abrirPagar(${c.id})">Pagar</button>`;
   a += `<button class="btn sec" onclick="fechar('dDet')">Fechar</button>`;
   $('#detAcoes').innerHTML = a;
@@ -438,6 +466,48 @@ async function apagarConta(id){
   } else if(!confirm('Excluir "'+c.descricao+'"?')) return;
   try{ await api('api/contas/'+id+q, {method:'DELETE'}); fechar('dDet'); toast('Excluída'); carregar() }
   catch(e){ toast(e.message) }
+}
+
+// ---------------- gastos do dia
+async function carregarGastos(){
+  const l = await api('api/gastos?mes='+MES);
+  CONTAS = l;
+  const tot = l.reduce((s,g)=>s+g.valor,0), hj = l.filter(g=>g.vencimento===HOJE).reduce((s,g)=>s+g.valor,0);
+  let h = `<div class="resumo">
+    <div class="box"><small>Hoje</small><b>${brl(hj)}</b></div>
+    <div class="box"><small>No mês (${l.length})</small><b>${brl(tot)}</b></div></div>`;
+  if(!l.length) h += '<div class="vazio">Nenhum gasto lançado neste mês.<br>Use o + para lançar mercado, farmácia, gasolina…</div>';
+  const dias = {};
+  l.forEach(g=>(dias[g.vencimento] = dias[g.vencimento] || []).push(g));
+  for(const [d, gs] of Object.entries(dias)){
+    const t = gs.reduce((s,g)=>s+g.valor,0);
+    const nome = d===HOJE ? 'Hoje' : new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+    h += `<h2 style="display:flex;justify-content:space-between"><span>${nome}</span><span>${brl(t)}</span></h2>`;
+    h += gs.map(g=>`<div class="item" onclick="detalhe(${g.id})"><div class="info">
+        <div class="t">${esc(g.descricao)} ${g.comprovante?'📎':''}</div>
+        <div class="s">${esc(g.pago_por)}${g.forma?' · '+esc(g.forma):''}</div>
+        ${g.categoria?'<span class="tag">'+esc(g.categoria)+'</span>':''}</div>
+        <div class="v">${brl(g.valor)}</div></div>`).join('');
+  }
+  if(l.length){
+    const cats = {};
+    l.forEach(g=>{const c=g.categoria||'Sem categoria'; cats[c]=(cats[c]||0)+g.valor});
+    h += '<h2>Por categoria</h2><div class="box">' + Object.entries(cats).sort((a,b)=>b[1]-a[1])
+      .map(([c,v])=>`<div class="cat"><span>${esc(c)}</span><b>${brl(v)}</b></div>`).join('') + '</div>';
+  }
+  $('#aba-gastos').innerHTML = h;
+}
+function novoGasto(){
+  const f = $('#dGasto form'); f.reset();
+  f.data.value = MES===HOJE.slice(0,7) ? HOJE : MES+'-01';
+  abrir('dGasto');
+}
+async function salvarGasto(ev){
+  ev.preventDefault();
+  const f = ev.target, btn = f.querySelector('.btn.ok'); btn.disabled = true;
+  try{ await api('api/gastos', {method:'POST', body: await formComArquivo(f)}); fechar('dGasto'); toast('Gasto salvo'); carregar(); carregarCategorias() }
+  catch(e){ toast(e.message) } finally{ btn.disabled=false }
+  return false;
 }
 
 // ---------------- entradas
